@@ -1,0 +1,2 @@
+-e git://github.com/slimta/python-slimta.git@4.0.5#egg=python-slimta
+
