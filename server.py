@@ -23,7 +23,9 @@ import smtplib
 import json
 import urllib.request
 
+import configparser
 
+config = configparser.ConfigParser()
 logging.basicConfig(level=logging.DEBUG)
 
 
@@ -64,7 +66,7 @@ class MSA(MTA):
 
 		# Relay:
 		ssl = SSLContext(PROTOCOL_SSLv23)
-		ssl.load_cert_chain('../tls/certificate.pem', '../tls/key.pem') # !!! Use real cert/key!
+		ssl.load_cert_chain(config['SSL']['certificate_path'], config['SSL']['key_path'])
 		self.relay = MxSmtpRelay(context=ssl, connect_timeout=20, command_timeout=10, data_timeout=20, idle_timeout=30)
 
 		# Queue:
@@ -91,11 +93,11 @@ class MSA(MTA):
 
 # Mailing-list:
 class MailingListDistribution(QueuePolicy):
-	def __init__(self, msa, mail_list_url, mda_domains):
+	def __init__(self, msa, mail_list_url, mda_domain):
 		super()
 		self.msa = msa
-		self.mail_list_url
-		self.mda_domains = mda_domains
+		self.mail_list_url = mail_list_url
+		self.mda_domain = mda_domain
 
 
 	def apply(self, envelope):
@@ -114,10 +116,10 @@ class MailingListDistribution(QueuePolicy):
 			# Distribute:
 			local_recipients = set(result['original_recipients'])
 			if result['list_recipients']:
-				local_recipients.add('lists@' + self.mda_domains[0])
+				local_recipients.add('lists@' + self.mda_domain)
 				for recipient in result['list_recipients']:
 					localpart, domain = recipient.rsplit('@', 1)
-					if domain.lower() not in self.mda_domains:
+					if domain.lower() != self.mda_domain.lower():
 						external_recipients.add(recipient)
 					else:
 						local_recipients.add(recipient)
@@ -147,7 +149,7 @@ class MDA_Validators(SmtpValidators):
 			reply.code = '550'
 			reply.message = '5.7.1 <{0}> Not a valid email address format'
 			return
-		if domain.lower() not in ['enterprisechristianchurch-test.org']: #!!! HARDCODE!
+		if domain.lower() != self.mda_domain.lower():
 			reply.code = '550'
 			reply.message = '5.7.1 <{0}> Not a domain for which we accept email'
 			return
@@ -156,12 +158,12 @@ class MDA_Validators(SmtpValidators):
 #--------------------------------------
 class MDA(MTA):
 
-	def __init__(self, msa, mail_list_url, mda_domains):
+	def __init__(self, msa, mail_list_url, mda_domain):
 
 		self.msa = msa
 
 		# Relay:
-		relay = DovecotLdaRelay('/usr/lib/dovecot/dovecot-lda', timeout=10.0)
+		relay = DovecotLdaRelay(config['LDA']['dovecot_path'], timeout=10.0)
 
 		# Queue:
 		env_db = shelve.open('envelope.db')
@@ -175,7 +177,7 @@ class MDA(MTA):
 		self.queue.add_policy(AddMessageIdHeader())
 		self.queue.add_policy(AddReceivedHeader())
 		# Mailing List:
-		self.queue.add_policy(MailingListDistribution(self.msa, mail_list_url, mda_domains))
+		self.queue.add_policy(MailingListDistribution(self.msa, mail_list_url, mda_domain))
 		# SpamAssassin:
 		#self.queue.add_policy(SpamAssassin())
 
@@ -188,11 +190,23 @@ class MDA(MTA):
 #--------------------------------------
 # Other: DKIM?  SPF? !!!!
 
+
 if __name__ == "__main__":
+	import argparse
+
+	k_default_config_path = '/etc/slimtart/slimtart.conf'
+	
+	parser = argparse.ArgumentParser()
+	parser.add_argument('-c', '--config', help = 'path to config file; default is %s' % k_default_config_path, default = k_default_config_path)
+	args = parser.parse_args()
+
+	config.read(args.config)
+
 	# Run:
 	try:
+
 		msa = MSA()
-		mda = MDA(msa, 'http://127.0.0.1:8000/dsprofile/get_mail_list_recipients/', ['enterprisechristianchurch-test.org'])
+		mda = MDA(msa, config['MDA']['mail_list_url'], config['MDA']['domain'])
 
 		# System:
 		gevent.sleep(0.5) # sometimes gevent will not have opened the ports by the time you drop privileges and then it will fail, so calling a short sleep will make sure everything is ready.
