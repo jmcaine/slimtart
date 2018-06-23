@@ -70,8 +70,8 @@ class MSA(MTA):
 		self.relay = MxSmtpRelay(context=ssl, connect_timeout=20, command_timeout=10, data_timeout=20, idle_timeout=30)
 
 		# Queue:
-		env_db = shelve.open('msa_envelope.db')
-		meta_db = shelve.open('msa_meta.db')
+		env_db = shelve.open('msa_envelope')
+		meta_db = shelve.open('msa_meta')
 		storage = DictStorage(env_db, meta_db) # !!! replace with DiskStorage!  (installed via pip install python-slimta-diskstorage)
 		self.queue = Queue(storage, self.relay) # !!! pass in a backoff function, as in https://docs.slimta.org/en/latest/manual/queue.html
 		self.queue.start()
@@ -166,8 +166,8 @@ class MDA(MTA):
 		relay = DovecotLdaRelay(config['LDA']['dovecot_path'], timeout=10.0)
 
 		# Queue:
-		env_db = shelve.open('envelope.db')
-		meta_db = shelve.open('meta.db')
+		env_db = shelve.open('envelope')
+		meta_db = shelve.open('meta')
 		storage = DictStorage(env_db, meta_db) # !!! replace with DiskStorage!  (installed via pip install python-slimta-diskstorage)
 		self.queue = Queue(storage, relay) # !!! pass in a backoff function, as in https://docs.slimta.org/en/latest/manual/queue.html ?? NAH -- just need that in msa, not in mda!
 		self.queue.start()
