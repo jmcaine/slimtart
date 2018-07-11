@@ -8,7 +8,6 @@ from slimta.queue import Queue
 from slimta.policy import QueuePolicy
 from slimta.policy.headers import *
 from slimta.policy.spamassassin import SpamAssassin
-from slimta.edge.smtp import SmtpEdge, SmtpValidators
 from slimta.util import system
 
 from ssl import SSLContext, PROTOCOL_SSLv23
@@ -27,8 +26,6 @@ import configparser
 
 config = configparser.ConfigParser()
 logging.basicConfig(level=logging.DEBUG)
-
-_mda_domain = None # I wish I didn't have to have this global, but I see no other way to get mda_domain into the SMTP_Validators subclass: MDA_Validators
 
 #--------------------------------------
 class MTA:
@@ -85,7 +82,7 @@ class MSA(MTA):
 
 
 		# Edge:
-		self.edge = SmtpEdge(('', 587), self.queue, auth=False) #, auth=True, validator_class=MSA_Validators) # ?!!! context=ssl, tls_immediately=True,
+		self.edge = SmtpEdge(('0.0.0.0', 587), self.queue, auth=False) #, auth=True, validator_class=MSA_Validators) # ?!!! context=ssl, tls_immediately=True,
 		self.edge.start()
 
 
@@ -107,7 +104,7 @@ class MailingListDistribution(QueuePolicy):
 		local_recipients = set(envelope.recipients) # default, "original"
 		external_recipients = set()
 		try:
-			data = json.dumps({'addresses': envelope.recipients, 'sender': envelope.sender, 'domain': self.mda_domains[0]}).encode('utf8')
+			data = json.dumps({'addresses': envelope.recipients, 'sender': envelope.sender, 'domain': self.mda_domain}).encode('utf8')
 			req = urllib.request.Request(self.mail_list_url, data, {'content-type': 'application/json'})
 			response = urllib.request.urlopen(req)
 			result = json.loads(response.read().decode('utf8'))
@@ -128,7 +125,7 @@ class MailingListDistribution(QueuePolicy):
 			log.debug('MailingListDistribution final envelope.recipients: %s', envelope.recipients)
 			# Queue stack will continue processing these envelope.recipients, delivering them to their final destination.
 
-		except:
+		except: # TODO: handle better!!! (log, etc.)
 			log.error('Unable to fetch mailing-list recipients!')
 			# And just move on with original recipient list.  Group pseudo-addresses will bounce, so sender will know something is up!
 
@@ -149,7 +146,7 @@ class MDA_Validators(SmtpValidators):
 			reply.code = '550'
 			reply.message = '5.7.1 <{0}> Not a valid email address format'
 			return
-		if domain.lower() != self.mda_domain.lower():
+		if domain.lower() != _mda_domain.lower():
 			reply.code = '550'
 			reply.message = '5.7.1 <{0}> Not a domain for which we accept email'
 			return
@@ -183,7 +180,7 @@ class MDA(MTA):
 
 		# Edge:
 		#tls_args = {'keyfile': '/home/jmcaine/dev/temp/slimta/tls/key.pem', 'certfile': '/home/jmcaine/dev/temp/slimta/tls/certificate.pem'} -- gone, see https://docs.slimta.org/en/latest/blog/2016-11-14.html
-		self.edge = SmtpEdge(('', 25), self.queue, validator_class = MDA_Validators)
+		self.edge = SmtpEdge(('0.0.0.0', 25), self.queue, validator_class = MDA_Validators)
 		self.edge.start()
 
 
@@ -205,8 +202,7 @@ if __name__ == "__main__":
 	# Run:
 	try:
 		
-		global _mda_domain # I wish I didn't have to have this global, but I see no other way to get mda_domain into the SMTP_Validators subclass: MDA_Validators
-		_mda_domain = config['MDA']['domain']
+		_mda_domain = config['MDA']['domain'] # I wish I didn't have to have this global, but I see no other way to get mda_domain into the SMTP_Validators subclass: MDA_Validators
 
 		msa = MSA()
 		mda = MDA(msa, config['MDA']['mail_list_url'], config['MDA']['domain'])
