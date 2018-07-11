@@ -28,7 +28,7 @@ import configparser
 config = configparser.ConfigParser()
 logging.basicConfig(level=logging.DEBUG)
 
-
+_mda_domain = None # I wish I didn't have to have this global, but I see no other way to get mda_domain into the SMTP_Validators subclass: MDA_Validators
 
 #--------------------------------------
 class MTA:
@@ -204,6 +204,9 @@ if __name__ == "__main__":
 
 	# Run:
 	try:
+		
+		global _mda_domain # I wish I didn't have to have this global, but I see no other way to get mda_domain into the SMTP_Validators subclass: MDA_Validators
+		_mda_domain = config['MDA']['domain']
 
 		msa = MSA()
 		mda = MDA(msa, config['MDA']['mail_list_url'], config['MDA']['domain'])
