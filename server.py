@@ -90,11 +90,12 @@ class MSA(MTA):
 
 # Mailing-list:
 class MailingListDistribution(QueuePolicy):
-	def __init__(self, msa, mail_list_url, mda_domain):
+	def __init__(self, msa, mail_list_url, mda_domain, subject_prefix = None):
 		super()
 		self.msa = msa
 		self.mail_list_url = mail_list_url
 		self.mda_domain = mda_domain
+		self.subject_prefix = subject_prefix
 
 
 	def apply(self, envelope):
@@ -131,7 +132,8 @@ class MailingListDistribution(QueuePolicy):
 
 		if external_recipients:
 			cpy = envelope.copy(list(external_recipients))
-			cpy.sender = result['sender'] # altered ("localized") sender
+			cpy.sender = cpy.headers['from'] = result['sender'] # altered ("localized") sender
+			cpy.headers['subject'] = self.subject_prefix + cpy.headers['subject']
 			log.debug('MailingListDistribution final external envelope-recipients: %s', cpy.recipients)
 			result = self.msa.edge.handoff(cpy)
 			# NOW pay attention to result!!! (list of 2-tuples, each containing Envelope and corresponding ID string or QueueError)
@@ -155,7 +157,7 @@ class MDA_Validators(SmtpValidators):
 #--------------------------------------
 class MDA(MTA):
 
-	def __init__(self, msa, mail_list_url, mda_domain):
+	def __init__(self, msa, mail_list_url, mda_domain, list_subject_prefix = None):
 
 		self.msa = msa
 
@@ -174,7 +176,7 @@ class MDA(MTA):
 		self.queue.add_policy(AddMessageIdHeader())
 		self.queue.add_policy(AddReceivedHeader())
 		# Mailing List:
-		self.queue.add_policy(MailingListDistribution(self.msa, mail_list_url, mda_domain))
+		self.queue.add_policy(MailingListDistribution(self.msa, mail_list_url, mda_domain, list_subject_prefix))
 		# SpamAssassin:
 		#self.queue.add_policy(SpamAssassin())
 
@@ -205,7 +207,7 @@ if __name__ == "__main__":
 		_mda_domain = config['MDA']['domain'] # I wish I didn't have to have this global, but I see no other way to get mda_domain into the SMTP_Validators subclass: MDA_Validators
 
 		msa = MSA()
-		mda = MDA(msa, config['MDA']['mail_list_url'], config['MDA']['domain'])
+		mda = MDA(msa, config['MDA']['mail_list_url'], config['MDA']['domain'], config['MDA']['mail_list_subject_prefix'])
 
 		# System:
 		gevent.sleep(0.5) # sometimes gevent will not have opened the ports by the time you drop privileges and then it will fail, so calling a short sleep will make sure everything is ready.
