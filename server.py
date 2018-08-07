@@ -4,7 +4,7 @@ from slimta.policy.split import RecipientDomainSplit
 from slimta.edge.smtp import SmtpEdge, SmtpValidators
 from slimta.relay.pipe import DovecotLdaRelay
 from slimta.queue.dict import DictStorage
-from slimta.queue import Queue
+from slimta.queue import Queue, QueueError
 from slimta.policy import QueuePolicy
 from slimta.policy.headers import *
 from slimta.policy.spamassassin import SpamAssassin
@@ -70,7 +70,13 @@ class MSA(MTA):
 		env_db = shelve.open('msa_envelope')
 		meta_db = shelve.open('msa_meta')
 		storage = DictStorage(env_db, meta_db) # !!! replace with DiskStorage!  (installed via pip install python-slimta-diskstorage)
-		self.queue = Queue(storage, self.relay) # !!! pass in a backoff function, as in https://docs.slimta.org/en/latest/manual/queue.html
+		
+		def retry_backoff(envelope, attempts):
+			if attempts < 10:
+				return 60 * attempts * attempts # try again at increasingly long intervals; give up after 10 tries (100 minutes)
+			return None
+
+		self.queue = Queue(storage, self.relay, backoff = retry_backoff)
 		self.queue.start()
 
 		# Headers:
@@ -147,8 +153,11 @@ class MailingListDistribution(QueuePolicy):
 				headers['subject'] = self.subject_prefix + ' ' + subject
 
 			# Hand off the message!
-			result = self.msa.edge.handoff(cpy)
-			# NOW pay attention to result!!! (list of 2-tuples, each containing Envelope and corresponding ID string or QueueError)
+			for envelope, result in self.msa.edge.handoff(cpy):
+				if isinstance(result, QueueError):
+					log.error(result)
+				else:
+					log.debug('Handed message %s off to MSA' % result)
 
 
 # Validators:
@@ -180,7 +189,7 @@ class MDA(MTA):
 		env_db = shelve.open('envelope')
 		meta_db = shelve.open('meta')
 		storage = DictStorage(env_db, meta_db) # !!! replace with DiskStorage!  (installed via pip install python-slimta-diskstorage)
-		self.queue = Queue(storage, relay) # !!! pass in a backoff function, as in https://docs.slimta.org/en/latest/manual/queue.html ?? NAH -- just need that in msa, not in mda!
+		self.queue = Queue(storage, relay) # no backoff - just fail local delivery immediately
 		self.queue.start()
 
 		# Headers:
