@@ -109,9 +109,8 @@ class MailingListDistribution(QueuePolicy):
 			req = urllib.request.Request(self.mail_list_url, data, {'content-type': 'application/json'})
 			response = urllib.request.urlopen(req)
 			result = json.loads(response.read().decode('utf8'))
-			log.debug('MailingListDistribution result: %s', result)
-			log.debug('MailingListDistribution aliased recipients: %s', result['list_recipients'])
-			# Distribute:
+			#log.debug('MailingListDistribution list recipients: %s', result['list_recipients'])
+			# Distribute to list recipients:
 			local_recipients = set(result['original_recipients'])
 			if result['list_recipients']:
 				local_recipients.add('lists@' + self.mda_domain)
@@ -121,20 +120,33 @@ class MailingListDistribution(QueuePolicy):
 						external_recipients.add(recipient)
 					else:
 						local_recipients.add(recipient)
+			# Distribute to auto-aliases:
+			for local_address, original_address in result['aliases'].items():
+				external_recipients.add(original_address) # Assumes all original_addresses are 'external' (they originally came from another domain, not our own; thus the reason for the alias in the first place)
 			# set envelope.recipients to (possibly) new local_recipients:
 			envelope.recipients = list(local_recipients)
 			log.debug('MailingListDistribution final envelope.recipients: %s', envelope.recipients)
 			# Queue stack will continue processing these envelope.recipients, delivering them to their final destination.
 
-		except: # TODO: handle better!!! (log, etc.)
-			log.error('Unable to fetch mailing-list recipients!')
+		except:
+			log.exception('Unable to fetch mailing-list recipients!')
 			# And just move on with original recipient list.  Group pseudo-addresses will bounce, so sender will know something is up!
 
 		if external_recipients:
 			cpy = envelope.copy(list(external_recipients))
-			cpy.sender = cpy.headers['from'] = result['sender'] # altered ("localized") sender
-			cpy.headers['subject'] = self.subject_prefix + cpy.headers['subject']
-			log.debug('MailingListDistribution final external envelope-recipients: %s', cpy.recipients)
+			headers = cpy.headers
+			# Set 'sender' to the alias provided in 'result' (in order to avoid suspicion of relayed emails (me@x.com -> y.com -> destination))
+			cpy.sender = result['sender'] # altered ("localized") sender
+			del headers['from'] # MUST delete, first - cannot 'over-write', by design (of python email.message)
+			headers['from'] = result['sender']
+
+			# Modify the subject with a prefix if provided:
+			subject = headers['subject']
+			if self.subject_prefix and not subject.startswith('Re:'):
+				del headers['subject'] # MUST delete, first, by (python email.message) design
+				headers['subject'] = self.subject_prefix + ' ' + subject
+
+			# Hand off the message!
 			result = self.msa.edge.handoff(cpy)
 			# NOW pay attention to result!!! (list of 2-tuples, each containing Envelope and corresponding ID string or QueueError)
 
@@ -182,7 +194,7 @@ class MDA(MTA):
 
 		# Edge:
 		#tls_args = {'keyfile': '/home/jmcaine/dev/temp/slimta/tls/key.pem', 'certfile': '/home/jmcaine/dev/temp/slimta/tls/certificate.pem'} -- gone, see https://docs.slimta.org/en/latest/blog/2016-11-14.html
-		self.edge = SmtpEdge(('0.0.0.0', 25), self.queue, validator_class = MDA_Validators)
+		self.edge = SmtpEdge(('0.0.0.0', 25), self.queue, validator_class = MDA_Validators, hostname = mda_domain)
 		self.edge.start()
 
 
