@@ -88,7 +88,7 @@ class MSA(MTA):
 
 
 		# Edge:
-		self.edge = SmtpEdge(('0.0.0.0', 587), self.queue, auth=False) #, auth=True, validator_class=MSA_Validators) # ?!!! context=ssl, tls_immediately=True,
+		self.edge = SmtpEdge(('localhost', 587), self.queue, auth=False) #, auth=True, validator_class=MSA_Validators) # ?!!! context=ssl, tls_immediately=True,
 		self.edge.start()
 
 
@@ -203,7 +203,9 @@ class MDA(MTA):
 
 		# Edge:
 		#tls_args = {'keyfile': '/home/jmcaine/dev/temp/slimta/tls/key.pem', 'certfile': '/home/jmcaine/dev/temp/slimta/tls/certificate.pem'} -- gone, see https://docs.slimta.org/en/latest/blog/2016-11-14.html
-		self.edge = SmtpEdge(('0.0.0.0', 25), self.queue, validator_class = MDA_Validators, hostname = mda_domain)
+		ssl = SSLContext(PROTOCOL_SSLv23)
+		ssl.load_cert_chain(config['SSL']['certificate_path'], config['SSL']['key_path'])
+		self.edge = SmtpEdge(('0.0.0.0', 25), self.queue, validator_class = MDA_Validators, hostname = mda_domain, context = ssl)
 		self.edge.start()
 
 
