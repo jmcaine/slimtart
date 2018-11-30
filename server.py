@@ -3,12 +3,14 @@ from slimta.relay.smtp.mx import MxSmtpRelay
 from slimta.policy.split import RecipientDomainSplit
 from slimta.edge.smtp import SmtpEdge, SmtpValidators
 from slimta.relay.pipe import DovecotLdaRelay
-from slimta.queue.dict import DictStorage
+#from slimta.queue.dict import DictStorage
 from slimta.queue import Queue, QueueError
 from slimta.policy import QueuePolicy
 from slimta.policy.headers import *
 from slimta.policy.spamassassin import SpamAssassin
 from slimta.util import system
+
+from slimta.diskstorage import DiskStorage
 
 from ssl import SSLContext, PROTOCOL_SSLv23
 from pysasl import AuthenticationCredentials
@@ -67,10 +69,11 @@ class MSA(MTA):
 		self.relay = MxSmtpRelay(context=ssl, connect_timeout=20, command_timeout=10, data_timeout=20, idle_timeout=30)
 
 		# Queue:
-		env_db = shelve.open('msa_envelope')
-		meta_db = shelve.open('msa_meta')
-		storage = DictStorage(env_db, meta_db) # !!! replace with DiskStorage!  (installed via pip install python-slimta-diskstorage)
-		
+		#env_db = shelve.open('msa_envelope')
+		#meta_db = shelve.open('msa_meta')
+		#storage = DictStorage(env_db, meta_db) # !!! replace with DiskStorage!  (installed via pip install python-slimta-diskstorage)
+		storage = DiskStorage(config['MSA']['ds_env'], config['MSA']['ds_meta'])
+
 		def retry_backoff(envelope, attempts):
 			if attempts < 10:
 				return 60 * attempts * attempts # try again at increasingly long intervals; give up after 10 tries (100 minutes)
@@ -186,9 +189,11 @@ class MDA(MTA):
 		relay = DovecotLdaRelay(config['LDA']['dovecot_path'], timeout=10.0)
 
 		# Queue:
-		env_db = shelve.open('envelope')
-		meta_db = shelve.open('meta')
-		storage = DictStorage(env_db, meta_db) # !!! replace with DiskStorage!  (installed via pip install python-slimta-diskstorage)
+		#env_db = shelve.open('envelope')
+		#meta_db = shelve.open('meta')
+		#storage = DictStorage(env_db, meta_db) # !!! replace with DiskStorage!  (installed via pip install python-slimta-diskstorage)
+		storage = DiskStorage(config['MDA']['ds_env'], config['MDA']['ds_meta'])
+
 		self.queue = Queue(storage, relay) # no backoff - just fail local delivery immediately
 		self.queue.start()
 
